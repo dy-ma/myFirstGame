@@ -2,23 +2,30 @@
 
 /*
  * TODOs
- ** Draw board
- ** Get dimensions from file
- * Show player 
- * Map and move player
- * Buildings
- * Enemies
- * power orbs
-
- * To FIX
- * change objarr to writable memory. Causes seg fault rn.
- * need to initialize it, but this breaks it.
+	 * Draw board *
+	 * Get dimensions from file *
+	 * Show player *
+	 * Map and move player *
+	 * Buildings *
+	 * Enemies *
+	 * power orbs *
+	 * collision detection *
+	 	* buildings *
+	 	* enemies *
+	 	* items *
+	 	* power orbs *
+ * TO FIX *
+ * FIXED
+	*  change objarr to writable memory. Causes seg fault rn. *
+	*  need to initialize it, but this breaks it. *
+ * To REMOVE
+	* //printf
  * Dynamically allocated
- 	* board
- 	* objarr
+ 	* board *
+ 	* objarr *
  * To ASK
-	* writing to array of structs
-	* why does mallocing the array cause a seg fault 
+	* writing to array of structs *
+	* why does mallocing the array cause a seg fault *
 */
 
 #include "game.h"
@@ -63,10 +70,11 @@ typedef struct {
 
 //Globals
 int linecount, objcount = 0;
-//char** board;
+unsigned itemcount = 0;
 dimensions dims;
 controls conts;
 play ply;
+play move;
 obj* objarr;
 char** board;
 
@@ -79,12 +87,15 @@ int createBoard();
 
 int playLoop();
 
+int noMemLeakPls();
+
 
 int playGame(const char* filename)
 {
 	readFile(filename);
 	createBoard();
 	playLoop();
+	noMemLeakPls();
 	return 0;
 }
 
@@ -100,7 +111,6 @@ int readFile(const char* filename)
 
 	linecount = 0;
 	while (fgets(buf, 30, fp) != NULL) linecount++;
-	//printf("linecount: %d\n", linecount);
 	rewind(fp);
 
 	objarr = (obj*)malloc(sizeof(obj) * (linecount - 3));
@@ -113,27 +123,21 @@ int readFile(const char* filename)
 		switch (j) {
 		case 0:
 			sscanf(buf, "%d %d", &dims.h, &dims.w);
-			//printf("%d \n%d \n", dims.h, dims.w);
 			break;
 		case 1:
 			sscanf(buf, "%c %c %c %c %c", &conts.left, &conts.right, &conts.up, &conts.down, &conts.quit);
 			if (conts.left == '\n') {
 				conts = (controls){.left = 'a', .right = 'd', .up = 'w', .down = 's', .quit = 'q'};
 			}
-			//printf("%c \n%c \n%c \n%c \n%c \n", conts.left, conts.right, conts.up, conts.down, conts.quit);
 			break;
 		case 2:
 			sscanf(buf, "%c %c %d %d", &ply.player, &ply.powered, &ply.y, &ply.x);
-			//printf("%c \n%c \n%d \n%d \n", ply.player, ply.powered, ply.y, ply.x);
 			break;
 		default:
 			sscanf(buf, "%c %d %d", &objarr[objcount].type, &objarr[objcount].y, &objarr[objcount].x);
-			//printf("%c \n%d \n%d \n", objarr[objcount].type, objarr[objcount].y, objarr[objcount].x);
 			objcount++;
 
 		}
-
-		//printf("%s\n", buf);
 	}
 	fclose(fp);
 	return 0;
@@ -143,10 +147,11 @@ int createBoard()
 {
 	int hh = dims.h + 2;
 	int ww = dims.w + 2;
+	itemcount = 0;
 
 	//creating the board
 	board = malloc(hh * sizeof(char*));
-	for (int i = 0; i < ww; i++) 
+	for (int i = 0; i < hh; i++) 
 		board[i] = malloc(ww * sizeof(char));
 	
 	//skeleton
@@ -159,15 +164,13 @@ int createBoard()
 		}
 		board[i][0] = BORDER;
 		board[i][ww - 1] = BORDER;
-		board[i][ww] = '\n';
 	}
 
 	//player
-	if(ply.x < (ww - 2) && ply.y < (hh - 2))
+	if(ply.x < dims.w && ply.y < dims.h)
 		board[ply.y + 1][ply.x + 1] = ply.player;
-	else printf("bad\n");
 
-	//enemies
+	//objects
 	for (int i = 0; i < objcount; i++) {
 		//enemies
 		if (objarr[i].type == 'E' && objarr[i].y < dims.h && objarr[i].x < dims.w) {
@@ -177,6 +180,7 @@ int createBoard()
 		//items
 		if (objarr[i].type == 'I' && objarr[i].y < dims.h && objarr[i].x < dims.w) {
 			board[objarr[i].y + 1][objarr[i].x + 1] = '$';
+			itemcount++;
 		}
 
 		//power orbs
@@ -210,15 +214,180 @@ int playLoop()
 {
 	int hh = dims.h + 2;
 	int ww = dims.w + 2;
+	unsigned score = 0, powerlevel = 0;
+	int itemtotal = itemcount;
+	bool dead = false;
 
-	//printing the board
-	for (int i = 0; i < hh; i++) {
-		for (int j = 0; j < ww; j++)
-			printf("%c", board[i][j]);
-		printf("\n");
+	move = (play){.player = ply.player, .powered = ply.powered, .y = ply.y, .x = ply.x};
+
+	while(true) {
+		printf("Score: %u\n", score);
+		printf("Items remaining: %u\n", itemcount);
+
+		if (dead) {
+			board[move.y + 1][move.x + 1] = '@';
+		}
+
+		//printing the board
+		for (int i = 0; i < hh; i++) {
+			for (int j = 0; j < ww; j++)
+				printf("%c", board[i][j]);
+			printf("\n");
+		}
+
+		//death
+		if (dead) {
+			printf("You have died.\n");
+			break;
+		}
+
+		//movement
+		printf("Enter input: ");
+		char ent = '\0';
+		scanf(" %c", &ent);
+
+		if (ent == conts.quit) {
+			printf("You have quit.\n");
+			break;
+		} 
+
+		else if (ent == conts.up) {
+			//dimensions
+			if (move.y > 0 && board[move.y][move.x + 1] != '-') {
+				//buildings
+				if (board[move.y][move.x + 1] != '-' && board[move.y][move.x + 1] != '&') {
+					//items
+					if (board[move.y][move.x + 1] == '$') {
+						itemcount -= 1;
+						score++;
+					}
+					//power orbs
+					else if (board[move.y][move.x + 1] == '*') {
+						powerlevel = 7;
+					}
+					//enemies
+					else if (board[move.y][move.x + 1] == 'X') {
+						if (powerlevel == 0) dead = true;
+					}
+
+					//swap chars
+					board[move.y + 1][move.x + 1] = FILL;
+					move.y -= 1;
+					board[move.y + 1][move.x + 1] = move.player;
+				}
+			}
+		}
+
+		else if (ent == conts.down) {
+			//dimensions
+			if (move.y < (dims.h - 1)) {
+				//buildings
+				if (board[move.y + 2][move.x + 1] != '-') {
+					//items
+					if (board[move.y + 2][move.x + 1] == '$') {
+						itemcount -= 1;
+						score++;
+					}
+					//power orbs
+					else if (board[move.y + 2][move.x + 1] == '*') {
+						powerlevel = 7;
+					}
+					//enemies
+					else if (board[move.y + 2][move.x + 1] == 'X') {
+						if (powerlevel == 0) dead = true;
+					}
+
+					//swap chars
+					board[move.y +1][move.x + 1] = FILL;
+					move.y += 1;
+					board[move.y + 1][move.x + 1] = move.player;
+				}
+			}
+		}
+
+		else if (ent == conts.left) {
+			//dimensions
+			if (move.x > 0) {
+				//buildings
+				if (board[move.y + 1][move.x] != '-') {
+					//items
+					if (board[move.y + 1][move.x] == '$') {
+						itemcount -= 1;
+						score++;
+					}
+					//power orbs
+					else if (board[move.y + 1][move.x] == '*') {
+						powerlevel = 7;
+					}
+					//enemies
+					else if (board[move.y + 1][move.x] == 'X') {
+						if (powerlevel == 0) dead = true;
+					}
+					//swap chars
+					board[move.y + 1][move.x + 1] = FILL;
+					move.x -= 1;
+					board[move.y + 1][move.x + 1] = move.player;
+				}
+			}
+		}
+
+		else if (ent == conts.right) {
+			//dimensions
+			if (move.x < (dims.w - 1)) {
+				//buildings
+				if (board[move.y + 1][move.x + 2] != '-') {
+					//items
+					if (board[move.y + 1][move.x + 2] == '$') {
+						itemcount -= 1;
+						score++;
+					}
+					//power orbs
+					else if (board[move.y + 1][move.x + 2] == '*') {
+						powerlevel = 7;
+					}
+					//enemies
+					else if (board[move.y + 1][move.x + 2] == 'X') {
+						if (powerlevel == 0) dead = true;
+					}
+
+					//swap chars
+					board[move.y + 1][move.x + 1] = FILL;
+					move.x += 1;
+					board[move.y + 1][move.x + 1] = move.player;
+				}
+			}
+		}
+
+		//power level for wall cases
+		if(powerlevel > 0) {
+			board[move.y + 1][move.x + 1] = move.powered;
+			powerlevel -= 1;
+		}
+		else if(powerlevel == 0) board[move.y + 1][move.x + 1] = move.player;
+
+		//exit cases
+		if (itemtotal > 0 && score == itemtotal) {
+			printf("Congratulations! You have won.\n");
+			break;
+		}
 	}
+	printf("Final score: %u\n", score);
+
 	return 0;
 }
+
+int noMemLeakPls()
+{
+		free(objarr);
+		for (int i = 0; i < (dims.h + 2); i++)
+			free(board[i]);
+		free(board);
+		return 0;
+}
+
+
+
+
 
 
 
